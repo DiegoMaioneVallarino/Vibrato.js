@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 
 import type { FrequencyPoint } from "../../audio/analysis/analyzeFrequencyBands";
+import { mapAudioToValue } from "../../reactivity/engine/mapAudioToValue";
 import { renderReactiveFrame } from "../shaders/renderReactiveFrame";
 
 import "./ReactiveFramePreview.css";
@@ -17,6 +18,8 @@ type RenderedFrameInfo = {
   band: AudioBand;
   sourceValue: number;
   intensity: number;
+  minimum: number;
+  maximum: number;
   resultValue: number;
 };
 
@@ -36,6 +39,8 @@ export function ReactiveFramePreview({
     useState<AudioBand>("low");
 
   const [intensity, setIntensity] = useState(100);
+  const [minimum, setMinimum] = useState(0);
+  const [maximum, setMaximum] = useState(100);
 
   const [renderedFrame, setRenderedFrame] =
     useState<RenderedFrameInfo | null>(null);
@@ -51,12 +56,11 @@ export function ReactiveFramePreview({
 
     const sourceValue = frequencyPoint[selectedBand];
 
-    // Con intensidad al 100 %, se conserva el valor original.
-    // Con 200 %, se duplica; el resultado máximo sigue siendo 100.
-    const resultValue = Math.min(
-      100,
-      sourceValue * (intensity / 100)
-    );
+    const resultValue = mapAudioToValue(sourceValue, {
+      intensity,
+      minimum,
+      maximum,
+    });
 
     try {
       setError(null);
@@ -71,6 +75,8 @@ export function ReactiveFramePreview({
         band: selectedBand,
         sourceValue,
         intensity,
+        minimum,
+        maximum,
         resultValue,
       });
     } catch (renderError) {
@@ -153,6 +159,54 @@ export function ReactiveFramePreview({
               }}
             />
           </label>
+
+          <label className="reactive-control">
+            <span className="reactive-control-heading">
+              <span>Mínimo visual</span>
+              <strong>{minimum}%</strong>
+            </span>
+
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={minimum}
+              onChange={(event) => {
+                const nextMinimum = Number(event.target.value);
+
+                setMinimum(nextMinimum);
+
+                if (nextMinimum > maximum) {
+                  setMaximum(nextMinimum);
+                }
+              }}
+            />
+          </label>
+
+          <label className="reactive-control">
+            <span className="reactive-control-heading">
+              <span>Máximo visual</span>
+              <strong>{maximum}%</strong>
+            </span>
+
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={maximum}
+              onChange={(event) => {
+                const nextMaximum = Number(event.target.value);
+
+                setMaximum(nextMaximum);
+
+                if (nextMaximum < minimum) {
+                  setMinimum(nextMaximum);
+                }
+              }}
+            />
+          </label>
         </div>
 
         <p className="reactive-settings-hint">
@@ -176,7 +230,8 @@ export function ReactiveFramePreview({
             {renderedFrame.time.toFixed(2)} s ·{" "}
             {bandLabels[renderedFrame.band]}:{" "}
             {Math.round(renderedFrame.sourceValue)}% · Intensidad:{" "}
-            {renderedFrame.intensity}% · Resultado:{" "}
+            {renderedFrame.intensity}% · Rango:{" "}
+            {renderedFrame.minimum}–{renderedFrame.maximum}% · Resultado:{" "}
             {Math.round(renderedFrame.resultValue)}%
           </span>
         ) : (
