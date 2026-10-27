@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { generateWaveform } from "../features/audio/analysis/generateWaveform";
 import { Waveform } from "../features/audio/components/Waveform";
 
+
+import { ReactiveFramePreview } from "../features/visualizer/components/ReactiveFramePreview";
+
 import "./App.css";
 
 import {
@@ -328,21 +331,16 @@ const currentFrequencyPoint = frequencyAnalysis
           </div>
 
           <div className="preview-container">
-            <div className="preview-screen">
-              <div className="preview-empty">
-                <div className="preview-symbol">✳</div>
-                <h2>Tu visual comienza aquí</h2>
-                <p>
-                  Carga una canción para empezar a crear tu proyecto.
-                </p>
-              </div>
-            </div>
+  <ReactiveFramePreview
+    currentTime={currentTime}
+    frequencyPoint={currentFrequencyPoint}
+  />
 
-            <div className="preview-footer">
-              <span>Vista previa procesada</span>
-              <span>1920 × 1080 · 30 FPS</span>
-            </div>
-          </div>
+  <div className="preview-footer">
+    <span>Fotograma de prueba</span>
+    <span>960 × 540</span>
+  </div>
+</div>
         </section>
 
         <aside className="panel properties">

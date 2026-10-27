@@ -1,0 +1,92 @@
+.reactive-preview {
+  width: 100%;
+}
+
+.reactive-preview-screen {
+  position: relative;
+
+  width: 100%;
+  aspect-ratio: 16 / 9;
+
+  overflow: hidden;
+
+  border: 1px solid #34313b;
+  border-radius: 12px;
+
+  background: #0d0c10;
+}
+
+.reactive-preview-canvas {
+  display: block;
+
+  width: 100%;
+  height: 100%;
+}
+
+.reactive-preview-placeholder {
+  position: absolute;
+  inset: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+
+  background:
+    radial-gradient(
+      circle at 50% 45%,
+      #292137 0%,
+      #17141c 38%,
+      #0d0c10 75%
+    );
+
+  text-align: center;
+}
+
+.reactive-preview-placeholder span {
+  margin-bottom: 12px;
+
+  color: #a98bff;
+  font-size: 50px;
+}
+
+.reactive-preview-placeholder strong {
+  color: #f3f2f6;
+  font-size: 16px;
+}
+
+.reactive-preview-placeholder p {
+  margin: 8px 0 0;
+
+  color: #8b8591;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.reactive-preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  padding-top: 14px;
+}
+
+.reactive-preview-controls > span {
+  color: #99939f;
+  font-size: 11px;
+  text-align: right;
+}
+
+@media (max-width: 650px) {
+  .reactive-preview-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .reactive-preview-controls > span {
+    text-align: left;
+  }
+}
