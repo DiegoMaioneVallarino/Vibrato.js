@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 
+import { generateWaveform } from "../features/audio/analysis/generateWaveform";
+import { Waveform } from "../features/audio/components/Waveform";
+
 import "./App.css";
+
+import {
+  analyzeFrequencyBands,
+  getFrequencyAtTime,
+} from "../features/audio/analysis/analyzeFrequencyBands";
+
+import type {
+  FrequencyAnalysis,
+} from "../features/audio/analysis/analyzeFrequencyBands";
+
+import { FrequencyBands } from "../features/audio/components/FrequencyBands";
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) {
@@ -23,8 +37,19 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
+const [isAnalyzing, setIsAnalyzing] = useState(false);
+const [waveformError, setWaveformError] = useState<string | null>(null);
 
-  // Crea una URL temporal para el archivo y la libera al reemplazarlo.
+const [frequencyAnalysis, setFrequencyAnalysis] =
+  useState<FrequencyAnalysis | null>(null);
+
+const [isAnalyzingFrequencies, setIsAnalyzingFrequencies] =
+  useState(false);
+
+const [frequencyError, setFrequencyError] =
+  useState<string | null>(null);
+    // Crea una URL temporal para el archivo de audio.
   useEffect(() => {
     if (!audioFile) {
       setAudioUrl(null);
@@ -37,6 +62,86 @@ function App() {
 
     return () => {
       URL.revokeObjectURL(url);
+    };
+  }, [audioFile]);
+
+  // Genera la forma de onda.
+  useEffect(() => {
+    if (!audioFile) {
+      setWaveformPeaks([]);
+      setIsAnalyzing(false);
+      setWaveformError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    setWaveformPeaks([]);
+    setWaveformError(null);
+    setIsAnalyzing(true);
+
+    generateWaveform(audioFile)
+      .then((peaks) => {
+        if (!cancelled) {
+          setWaveformPeaks(peaks);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWaveformError(
+            "No se pudo generar la forma de onda para este archivo."
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsAnalyzing(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [audioFile]);
+
+  // Analiza las bandas de frecuencia.
+  useEffect(() => {
+    if (!audioFile) {
+      setFrequencyAnalysis(null);
+      setIsAnalyzingFrequencies(false);
+      setFrequencyError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    setFrequencyAnalysis(null);
+    setFrequencyError(null);
+    setIsAnalyzingFrequencies(true);
+
+    analyzeFrequencyBands(audioFile)
+      .then((analysis) => {
+        if (!cancelled) {
+          setFrequencyAnalysis(analysis);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Error al analizar las frecuencias:", error);
+
+        if (!cancelled) {
+          setFrequencyError(
+            "No se pudieron analizar las frecuencias de este archivo."
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsAnalyzingFrequencies(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, [audioFile]);
 
@@ -95,6 +200,23 @@ function App() {
     audio.currentTime = time;
     setCurrentTime(time);
   }
+function seekToTime(time: number) {
+  const audio = audioRef.current;
+
+  if (!audio || duration <= 0) {
+    return;
+  }
+
+  const safeTime = Math.max(0, Math.min(duration, time));
+
+  audio.currentTime = safeTime;
+  setCurrentTime(safeTime);
+}
+
+const currentFrequencyPoint = frequencyAnalysis
+  ? getFrequencyAtTime(frequencyAnalysis, currentTime)
+  : null;
+
 
   return (
     <div className="app">
@@ -231,13 +353,19 @@ function App() {
             </div>
           </div>
 
-          <div className="properties-empty">
-            <span className="properties-icon">◇</span>
-            <strong>Selecciona una capa</strong>
-            <p>
-              Sus ajustes y conexiones reactivas aparecerán aquí.
-            </p>
-          </div>
+         <div className="properties-empty">
+  <span className="properties-icon">◇</span>
+  <strong>Selecciona una capa</strong>
+  <p>
+    Sus ajustes y conexiones reactivas aparecerán aquí.
+  </p>
+</div>
+
+<FrequencyBands
+  point={currentFrequencyPoint}
+  isAnalyzing={isAnalyzingFrequencies}
+  error={frequencyError}
+/>
         </aside>
       </main>
 
@@ -252,7 +380,19 @@ function App() {
             {audioFile?.name ?? "Sin canción"}
           </span>
         </div>
+<Waveform
+  peaks={waveformPeaks}
+  currentTime={currentTime}
+  duration={duration}
+  isAnalyzing={isAnalyzing}
+  onSeek={seekToTime}
+/>
 
+{waveformError && (
+  <p className="error-message" role="alert">
+    {waveformError}
+  </p>
+)}
         <div className="transport">
           <button
             className="play-button"

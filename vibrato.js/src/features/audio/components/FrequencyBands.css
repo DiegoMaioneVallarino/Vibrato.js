@@ -1,0 +1,85 @@
+.frequency-panel {
+  padding: 20px;
+
+  border-top: 1px solid #29282e;
+}
+
+.frequency-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+
+  margin-bottom: 20px;
+}
+
+.frequency-panel-heading h3 {
+  margin: 7px 0 0;
+
+  color: #efedf3;
+  font-size: 13px;
+}
+
+.frequency-status {
+  padding: 5px 7px;
+
+  border: 1px solid #3b3740;
+  border-radius: 5px;
+
+  color: #99929f;
+
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.frequency-band-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.frequency-band-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-bottom: 7px;
+
+  color: #bdb8c4;
+  font-size: 11px;
+}
+
+.frequency-band-heading strong {
+  color: #e8e5ec;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.frequency-band-track {
+  height: 6px;
+  overflow: hidden;
+
+  border-radius: 999px;
+  background: #35313a;
+}
+
+.frequency-band-fill {
+  height: 100%;
+  border-radius: inherit;
+
+  transition: width 0.05s linear;
+}
+
+.frequency-message {
+  margin: 0;
+
+  color: #8b8591;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.frequency-error {
+  color: #ff9d9d;
+}
