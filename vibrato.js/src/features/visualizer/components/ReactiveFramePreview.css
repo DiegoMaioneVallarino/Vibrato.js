@@ -90,3 +90,103 @@
     text-align: left;
   }
 }
+
+.reactive-settings {
+  margin-top: 16px;
+  padding: 16px;
+
+  border: 1px solid #34303b;
+  border-radius: 10px;
+
+  background: #1b191f;
+}
+
+.reactive-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 18px;
+}
+
+.reactive-settings-heading h3 {
+  margin: 6px 0 0;
+
+  color: #f0edf4;
+  font-size: 13px;
+}
+
+.reactive-settings-badge {
+  padding: 5px 7px;
+
+  border: 1px solid #4c405d;
+  border-radius: 5px;
+
+  color: #bca7dc;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.reactive-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.reactive-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  color: #bcb6c3;
+  font-size: 11px;
+}
+
+.reactive-control select {
+  width: 100%;
+  min-height: 36px;
+
+  padding: 0 10px;
+
+  border: 1px solid #46404d;
+  border-radius: 7px;
+
+  background: #242129;
+  color: #f0edf4;
+}
+
+.reactive-control input[type="range"] {
+  width: 100%;
+  min-height: 36px;
+  margin: 0;
+
+  accent-color: #a98bff;
+}
+
+.reactive-control-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reactive-control-heading strong {
+  color: #d8c9ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.reactive-settings-hint {
+  margin: 14px 0 0;
+
+  color: #87808e;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 650px) {
+  .reactive-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}

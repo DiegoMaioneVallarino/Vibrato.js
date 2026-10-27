@@ -1,6 +1,6 @@
 export type ReactiveFrameOptions = {
   time: number;
-  bass: number;
+  reactivity: number;
 };
 
 const vertexShaderSource = `
@@ -27,7 +27,7 @@ const fragmentShaderSource = `
 
     float distanceFromCenter = length(centered);
 
-    // La intensidad de bajos controla el tamaño del resplandor.
+    // El valor reactivo controla el tamaño del resplandor.
     float glowSize = 0.12 + u_bass * 0.22;
 
     float glow = glowSize / (distanceFromCenter + 0.16);
@@ -150,7 +150,10 @@ export function renderReactiveFrame(
     gl.STATIC_DRAW
   );
 
-  const positionLocation = gl.getAttribLocation(program, "a_position");
+  const positionLocation = gl.getAttribLocation(
+    program,
+    "a_position"
+  );
 
   gl.enableVertexAttribArray(positionLocation);
 
@@ -168,16 +171,30 @@ export function renderReactiveFrame(
     "u_resolution"
   );
 
-  const timeLocation = gl.getUniformLocation(program, "u_time");
-  const bassLocation = gl.getUniformLocation(program, "u_bass");
+  const timeLocation = gl.getUniformLocation(
+    program,
+    "u_time"
+  );
 
-  const bass = Math.max(0, Math.min(100, options.bass)) / 100;
+  const bassLocation = gl.getUniformLocation(
+    program,
+    "u_bass"
+  );
+
+  const reactivity =
+    Math.max(0, Math.min(100, options.reactivity)) / 100;
 
   gl.viewport(0, 0, canvas.width, canvas.height);
 
-  gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+  gl.uniform2f(
+    resolutionLocation,
+    canvas.width,
+    canvas.height
+  );
+
   gl.uniform1f(timeLocation, options.time);
-  gl.uniform1f(bassLocation, bass);
+
+  gl.uniform1f(bassLocation, reactivity);
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 

@@ -10,9 +10,20 @@ type ReactiveFramePreviewProps = {
   frequencyPoint: FrequencyPoint | null;
 };
 
+type AudioBand = "low" | "mid" | "high";
+
 type RenderedFrameInfo = {
   time: number;
-  bass: number;
+  band: AudioBand;
+  sourceValue: number;
+  intensity: number;
+  resultValue: number;
+};
+
+const bandLabels: Record<AudioBand, string> = {
+  low: "Bajos",
+  mid: "Medios",
+  high: "Agudos",
 };
 
 export function ReactiveFramePreview({
@@ -20,6 +31,11 @@ export function ReactiveFramePreview({
   frequencyPoint,
 }: ReactiveFramePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [selectedBand, setSelectedBand] =
+    useState<AudioBand>("low");
+
+  const [intensity, setIntensity] = useState(100);
 
   const [renderedFrame, setRenderedFrame] =
     useState<RenderedFrameInfo | null>(null);
@@ -33,17 +49,29 @@ export function ReactiveFramePreview({
       return;
     }
 
+    const sourceValue = frequencyPoint[selectedBand];
+
+    // Con intensidad al 100 %, se conserva el valor original.
+    // Con 200 %, se duplica; el resultado máximo sigue siendo 100.
+    const resultValue = Math.min(
+      100,
+      sourceValue * (intensity / 100)
+    );
+
     try {
       setError(null);
 
       renderReactiveFrame(canvas, {
         time: currentTime,
-        bass: frequencyPoint.low,
+        reactivity: resultValue,
       });
 
       setRenderedFrame({
         time: currentTime,
-        bass: frequencyPoint.low,
+        band: selectedBand,
+        sourceValue,
+        intensity,
+        resultValue,
       });
     } catch (renderError) {
       console.error("Error al generar el fotograma:", renderError);
@@ -70,12 +98,67 @@ export function ReactiveFramePreview({
         {!renderedFrame && (
           <div className="reactive-preview-placeholder">
             <span>✳</span>
+
             <strong>Primer shader reactivo</strong>
+
             <p>
               Carga una canción y genera un fotograma de prueba.
             </p>
           </div>
         )}
+      </div>
+
+      <div className="reactive-settings">
+        <div className="reactive-settings-heading">
+          <div>
+            <span className="eyebrow">CONEXIÓN REACTIVA</span>
+            <h3>Resplandor del shader</h3>
+          </div>
+
+          <span className="reactive-settings-badge">
+            AUDIO → VISUAL
+          </span>
+        </div>
+
+        <div className="reactive-settings-grid">
+          <label className="reactive-control">
+            <span>Fuente de audio</span>
+
+            <select
+              value={selectedBand}
+              onChange={(event) => {
+                setSelectedBand(event.target.value as AudioBand);
+              }}
+            >
+              <option value="low">Bajos</option>
+              <option value="mid">Medios</option>
+              <option value="high">Agudos</option>
+            </select>
+          </label>
+
+          <label className="reactive-control">
+            <span className="reactive-control-heading">
+              <span>Intensidad</span>
+              <strong>{intensity}%</strong>
+            </span>
+
+            <input
+              type="range"
+              min={0}
+              max={200}
+              step={5}
+              value={intensity}
+              onChange={(event) => {
+                setIntensity(Number(event.target.value));
+              }}
+            />
+          </label>
+        </div>
+
+        <p className="reactive-settings-hint">
+          La banda seleccionada controla el resplandor al generar
+          el fotograma.
+        </p>
       </div>
 
       <div className="reactive-preview-controls">
@@ -90,8 +173,11 @@ export function ReactiveFramePreview({
 
         {renderedFrame ? (
           <span>
-            Fotograma: {renderedFrame.time.toFixed(2)} s · Bajos:{" "}
-            {Math.round(renderedFrame.bass)}%
+            {renderedFrame.time.toFixed(2)} s ·{" "}
+            {bandLabels[renderedFrame.band]}:{" "}
+            {Math.round(renderedFrame.sourceValue)}% · Intensidad:{" "}
+            {renderedFrame.intensity}% · Resultado:{" "}
+            {Math.round(renderedFrame.resultValue)}%
           </span>
         ) : (
           <span>Esperando un fotograma</span>
