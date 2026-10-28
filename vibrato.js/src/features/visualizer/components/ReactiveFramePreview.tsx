@@ -1,16 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { FrequencyPoint } from "../../audio/analysis/analyzeFrequencyBands";
-import { mapAudioToValue } from "../../reactivity/engine/mapAudioToValue";
-import { renderReactiveFrame } from "../shaders/renderReactiveFrame";
-
-import "./ReactiveFramePreview.css";
-
-import { renderPreviewClip } from "../../render/engine/renderPreviewClip";
-
 import type {
   FrequencyAnalysis,
+  FrequencyPoint,
 } from "../../audio/analysis/analyzeFrequencyBands";
+
+import {
+  mapAudioToValue,
+} from "../../reactivity/engine/mapAudioToValue";
+
+import {
+  renderPreviewClip,
+} from "../../render/engine/renderPreviewClip";
+
+import type {
+  AudioBand,
+} from "../../render/engine/renderPreviewClip";
+
+import {
+  renderReactiveFrame,
+} from "../shaders/renderReactiveFrame";
+
+import "./ReactiveFramePreview.css";
 
 type ReactiveFramePreviewProps = {
   currentTime: number;
@@ -18,8 +29,6 @@ type ReactiveFramePreviewProps = {
   audioFile: File | null;
   frequencyAnalysis: FrequencyAnalysis | null;
 };
-
-type AudioBand = "low" | "mid" | "high";
 
 type RenderedFrameInfo = {
   time: number;
@@ -29,6 +38,13 @@ type RenderedFrameInfo = {
   minimum: number;
   maximum: number;
   resultValue: number;
+};
+
+type VideoInfo = {
+  start: number;
+  requestedDuration: number;
+  fps: number;
+  band: AudioBand;
 };
 
 const bandLabels: Record<AudioBand, string> = {
@@ -56,20 +72,24 @@ export function ReactiveFramePreview({
     useState<RenderedFrameInfo | null>(null);
 
   const [error, setError] = useState<string | null>(null);
-const [videoUrl, setVideoUrl] = useState<string | null>(null);
-const [isRenderingVideo, setIsRenderingVideo] = useState(false);
-const [renderProgress, setRenderProgress] = useState(0);
-const [videoError, setVideoError] = useState<string | null>(null);
 
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
 
-useEffect(() => {
-  return () => {
-    if (videoUrl) {
-      URL.revokeObjectURL(videoUrl);
-    }
-  };
-}, [videoUrl]);
+  const [isRenderingVideo, setIsRenderingVideo] = useState(false);
+  const [renderProgress, setRenderProgress] = useState(0);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
+  const [clipDuration, setClipDuration] = useState(5);
+  const [clipFps, setClipFps] = useState(30);
+
+  useEffect(() => {
+    return () => {
+      if (videoUrl) {
+        URL.revokeObjectURL(videoUrl);
+      }
+    };
+  }, [videoUrl]);
 
   function handleRenderFrame() {
     const canvas = canvasRef.current;
@@ -113,47 +133,59 @@ useEffect(() => {
       );
     }
   }
-async function handleRenderVideo() {
-  if (!audioFile || !frequencyAnalysis || isRenderingVideo) {
-    return;
-  }
 
-  setIsRenderingVideo(true);
-  setRenderProgress(0);
-  setVideoError(null);
+  async function handleRenderVideo() {
+    if (!audioFile || !frequencyAnalysis || isRenderingVideo) {
+      return;
+    }
 
-  try {
-    const videoBlob = await renderPreviewClip({
-      audioFile,
-      analysis: frequencyAnalysis,
-      startTime: currentTime,
-      duration: 5,
+    // Guarda la configuración usada por esta generación.
+    const requestedInfo: VideoInfo = {
+      start: currentTime,
+      requestedDuration: clipDuration,
+      fps: clipFps,
       band: selectedBand,
-      mapping: {
-        intensity,
-        minimum,
-        maximum,
-      },
-      onProgress: (progress) => {
-        setRenderProgress(Math.round(progress * 100));
-      },
-    });
+    };
 
-    const newVideoUrl = URL.createObjectURL(videoBlob);
+    setIsRenderingVideo(true);
+    setRenderProgress(0);
+    setVideoError(null);
 
-    setVideoUrl(newVideoUrl);
-  } catch (renderError) {
-    console.error("Error al generar el video:", renderError);
+    try {
+      const videoBlob = await renderPreviewClip({
+        audioFile,
+        analysis: frequencyAnalysis,
+        startTime: requestedInfo.start,
+        duration: requestedInfo.requestedDuration,
+        fps: requestedInfo.fps,
+        band: requestedInfo.band,
+        mapping: {
+          intensity,
+          minimum,
+          maximum,
+        },
+        onProgress: (progress) => {
+          setRenderProgress(Math.round(progress * 100));
+        },
+      });
 
-    setVideoError(
-      renderError instanceof Error
-        ? renderError.message
-        : "No se pudo generar el video."
-    );
-  } finally {
-    setIsRenderingVideo(false);
+      const newVideoUrl = URL.createObjectURL(videoBlob);
+
+      setVideoUrl(newVideoUrl);
+      setVideoInfo(requestedInfo);
+    } catch (renderError) {
+      console.error("Error al generar el video:", renderError);
+
+      setVideoError(
+        renderError instanceof Error
+          ? renderError.message
+          : "No se pudo generar el video."
+      );
+    } finally {
+      setIsRenderingVideo(false);
+    }
   }
-}
+
   return (
     <div className="reactive-preview">
       <div className="reactive-preview-screen">
@@ -196,6 +228,7 @@ async function handleRenderVideo() {
 
             <select
               value={selectedBand}
+              disabled={isRenderingVideo}
               onChange={(event) => {
                 setSelectedBand(event.target.value as AudioBand);
               }}
@@ -218,6 +251,7 @@ async function handleRenderVideo() {
               max={200}
               step={5}
               value={intensity}
+              disabled={isRenderingVideo}
               onChange={(event) => {
                 setIntensity(Number(event.target.value));
               }}
@@ -236,6 +270,7 @@ async function handleRenderVideo() {
               max={100}
               step={1}
               value={minimum}
+              disabled={isRenderingVideo}
               onChange={(event) => {
                 const nextMinimum = Number(event.target.value);
 
@@ -260,6 +295,7 @@ async function handleRenderVideo() {
               max={100}
               step={1}
               value={maximum}
+              disabled={isRenderingVideo}
               onChange={(event) => {
                 const nextMaximum = Number(event.target.value);
 
@@ -275,7 +311,7 @@ async function handleRenderVideo() {
 
         <p className="reactive-settings-hint">
           La banda seleccionada controla el resplandor al generar
-          el fotograma.
+          el fotograma o el video.
         </p>
       </div>
 
@@ -284,7 +320,7 @@ async function handleRenderVideo() {
           type="button"
           className="button button-primary"
           onClick={handleRenderFrame}
-          disabled={!frequencyPoint}
+          disabled={!frequencyPoint || isRenderingVideo}
         >
           Generar fotograma
         </button>
@@ -310,69 +346,124 @@ async function handleRenderVideo() {
       )}
 
       <div className="clip-preview">
-  <div className="clip-preview-heading">
-    <div>
-      <span className="eyebrow">VIDEO PROCESADO</span>
-      <h3>Fragmento de prueba</h3>
-    </div>
+        <div className="clip-preview-heading">
+          <div>
+            <span className="eyebrow">VIDEO PROCESADO</span>
+            <h3>Fragmento de prueba</h3>
+          </div>
 
-    <span>5 s · 30 FPS · 640 × 360</span>
-  </div>
+          <span>
+            {clipDuration} s · {clipFps} FPS · 640 × 360
+          </span>
+        </div>
 
-  <p>
-    El fragmento comienza en la posición actual de la canción.
-  </p>
+        <p>
+          Inicio seleccionado: {currentTime.toFixed(2)} s.
+          Si el fragmento llega al final de la canción, se recortará.
+        </p>
 
-  <button
-    type="button"
-    className="button button-primary"
-    onClick={handleRenderVideo}
-    disabled={
-      !audioFile ||
-      !frequencyAnalysis ||
-      isRenderingVideo
-    }
-  >
-    {isRenderingVideo
-      ? `Procesando ${renderProgress}%`
-      : "Generar video de prueba"}
-  </button>
+        <fieldset
+          className="clip-settings"
+          disabled={isRenderingVideo}
+        >
+          <legend>Opciones del fragmento</legend>
 
-  {isRenderingVideo && (
-    <progress
-      className="clip-progress"
-      max={100}
-      value={renderProgress}
-    >
-      {renderProgress}%
-    </progress>
-  )}
+          <div className="reactive-settings-grid">
+            <label className="reactive-control">
+              <span>Duración</span>
 
-  {videoError && (
-    <p className="error-message" role="alert">
-      {videoError}
-    </p>
-  )}
+              <select
+                value={clipDuration}
+                onChange={(event) => {
+                  setClipDuration(Number(event.target.value));
+                }}
+              >
+                <option value={5}>5 segundos</option>
+                <option value={10}>10 segundos</option>
+                <option value={15}>15 segundos</option>
+                <option value={30}>30 segundos</option>
+              </select>
+            </label>
 
-  {videoUrl && (
-    <div className="clip-result">
-      <video
-        src={videoUrl}
-        controls
-        playsInline
-        className="clip-video"
-      />
+            <label className="reactive-control">
+              <span>Fotogramas por segundo</span>
 
-      <a
-        href={videoUrl}
-        download="vibrato-preview.webm"
-        className="clip-download"
-      >
-        Descargar video de prueba
-      </a>
-    </div>
-  )}
-</div>
+              <select
+                value={clipFps}
+                onChange={(event) => {
+                  setClipFps(Number(event.target.value));
+                }}
+              >
+                <option value={24}>24 FPS</option>
+                <option value={30}>30 FPS</option>
+                <option value={60}>60 FPS</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <button
+          type="button"
+          className="button button-primary"
+          onClick={handleRenderVideo}
+          disabled={
+            !audioFile ||
+            !frequencyAnalysis ||
+            isRenderingVideo
+          }
+        >
+          {isRenderingVideo
+            ? renderProgress === 100
+              ? "Finalizando video..."
+              : `Procesando ${renderProgress}%`
+            : "Generar video de prueba"}
+        </button>
+
+        {isRenderingVideo && (
+          <progress
+            className="clip-progress"
+            max={100}
+            value={renderProgress}
+            aria-label="Progreso del video"
+          >
+            {renderProgress}%
+          </progress>
+        )}
+
+        {videoError && (
+          <p className="error-message" role="alert">
+            {videoError}
+          </p>
+        )}
+
+        {videoUrl && (
+          <div className="clip-result">
+            {videoInfo && (
+              <p className="clip-result-info">
+                Inicio: {videoInfo.start.toFixed(2)} s · Duración
+                solicitada: {videoInfo.requestedDuration} s ·{" "}
+                {videoInfo.fps} FPS ·{" "}
+                {bandLabels[videoInfo.band]}
+              </p>
+            )}
+
+            <video
+              src={videoUrl}
+              controls
+              playsInline
+              className="clip-video"
+            />
+
+            <a
+              href={videoUrl}
+              download="vibrato-preview.webm"
+              className="clip-download"
+            >
+              Descargar video de prueba
+            </a>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

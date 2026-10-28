@@ -267,3 +267,31 @@
 .clip-download:hover {
   text-decoration: underline;
 }
+
+.clip-settings {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 14px;
+
+  border: 1px solid #3a3442;
+  border-radius: 8px;
+}
+
+.clip-settings legend {
+  padding: 0 6px;
+
+  color: #a69cab;
+  font-size: 11px;
+}
+
+.clip-settings:disabled {
+  opacity: 0.5;
+}
+
+.clip-result-info {
+  margin: 0;
+
+  color: #a69cab;
+  font-size: 11px;
+  line-height: 1.5;
+}

@@ -34,12 +34,12 @@ type RenderPreviewClipOptions = {
   analysis: FrequencyAnalysis;
   startTime: number;
   duration: number;
+  fps: number;
   band: AudioBand;
   mapping: ReactiveMapping;
   onProgress?: (progress: number) => void;
 };
 
-const FPS = 30;
 const WIDTH = 640;
 const HEIGHT = 360;
 
@@ -48,10 +48,25 @@ export async function renderPreviewClip({
   analysis,
   startTime,
   duration,
+  fps,
   band,
   mapping,
   onProgress,
 }: RenderPreviewClipOptions): Promise<Blob> {
+  if (![24, 30, 60].includes(fps)) {
+    throw new Error("Selecciona 24, 30 o 60 FPS.");
+  }
+
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 30) {
+    throw new Error(
+      "La duración debe ser mayor que cero y de hasta 30 segundos."
+    );
+  }
+
+  if (!Number.isFinite(startTime)) {
+    throw new Error("La posición de inicio no es válida.");
+  }
+
   const audioContext = new AudioContext();
 
   let decodedAudio: AudioBuffer;
@@ -76,10 +91,8 @@ export async function renderPreviewClip({
 
   const remainingDuration = availableDuration - safeStart;
 
-  // Redondeamos hacia abajo para que todos los fotogramas tengan
-  // la misma duración y el audio no sobrepase el final de la canción.
   const frameCount = Math.floor(
-    Math.min(duration, remainingDuration) * FPS
+    Math.min(duration, remainingDuration) * fps
   );
 
   if (frameCount < 1) {
@@ -88,7 +101,7 @@ export async function renderPreviewClip({
     );
   }
 
-  const clipDuration = frameCount / FPS;
+  const clipDuration = frameCount / fps;
 
   const canvas = document.createElement("canvas");
 
@@ -113,16 +126,20 @@ export async function renderPreviewClip({
   });
 
   output.addVideoTrack(videoSource, {
-    frameRate: FPS,
+    frameRate: fps,
   });
 
   output.addAudioTrack(audioSource);
 
-  await output.start();
+  let failed = false;
 
   async function writeVideo() {
     for (let frameIndex = 0; frameIndex < frameCount; frameIndex++) {
-      const videoTime = frameIndex / FPS;
+      if (failed) {
+        return;
+      }
+
+      const videoTime = frameIndex / fps;
       const songTime = safeStart + videoTime;
 
       const point = getFrequencyAtTime(analysis, songTime);
@@ -140,9 +157,7 @@ export async function renderPreviewClip({
         reactivity,
       });
 
-      // El tiempo del video empieza en cero, aunque el fragmento
-      // comience más adelante dentro de la canción.
-      await videoSource.add(videoTime, 1 / FPS);
+      await videoSource.add(videoTime, 1 / fps);
 
       onProgress?.((frameIndex + 1) / frameCount);
     }
@@ -160,7 +175,6 @@ export async function renderPreviewClip({
       decodedAudio.length - startSample
     );
 
-    // Alimentamos el audio en fragmentos de un segundo.
     const chunkSize = sampleRate;
 
     for (
@@ -168,6 +182,10 @@ export async function renderPreviewClip({
       offset < totalSamples;
       offset += chunkSize
     ) {
+      if (failed) {
+        return;
+      }
+
       const length = Math.min(
         chunkSize,
         totalSamples - offset
@@ -201,8 +219,8 @@ export async function renderPreviewClip({
   }
 
   try {
-    // Ambas pistas avanzan de forma concurrente para que el
-    // codificador pueda intercalarlas mientras escribe el archivo.
+    await output.start();
+
     await Promise.all([
       writeVideo(),
       writeAudio(),
@@ -218,7 +236,15 @@ export async function renderPreviewClip({
       type: "video/webm",
     });
   } catch (error) {
-    await output.cancel();
+    failed = true;
+
+    // Conserva el error original si también falla la limpieza.
+    try {
+      await output.cancel();
+    } catch (cleanupError) {
+      console.error("Error al liberar el render:", cleanupError);
+    }
+
     throw error;
   }
 }
