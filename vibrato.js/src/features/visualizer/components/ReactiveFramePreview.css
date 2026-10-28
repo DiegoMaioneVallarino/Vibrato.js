@@ -295,3 +295,79 @@
   font-size: 11px;
   line-height: 1.5;
 }
+
+.shader-editor {
+  margin-top: 16px;
+  padding: 16px;
+
+  border: 1px solid #34303b;
+  border-radius: 10px;
+
+  background: #1b191f;
+}
+
+.shader-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 16px;
+}
+
+.shader-editor-heading h3 {
+  margin: 6px 0 0;
+
+  color: #f0edf4;
+  font-size: 13px;
+}
+
+.shader-editor-label {
+  display: block;
+  margin-bottom: 8px;
+
+  color: #bcb6c3;
+  font-size: 11px;
+}
+
+.shader-code-input {
+  display: block;
+  width: 100%;
+  min-height: 280px;
+  resize: vertical;
+
+  padding: 14px;
+
+  border: 1px solid #45404d;
+  border-radius: 8px;
+
+  background: #111014;
+  color: #dfd4f5;
+
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.shader-code-input:focus {
+  outline: 2px solid #a98bff;
+  outline-offset: 2px;
+}
+
+.shader-code-input:disabled {
+  opacity: 0.6;
+}
+
+.shader-editor-hint {
+  margin: 12px 0 0;
+
+  color: #948a9f;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.reactive-preview .error-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

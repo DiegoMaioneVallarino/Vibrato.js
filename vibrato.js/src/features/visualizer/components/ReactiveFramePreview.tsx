@@ -18,6 +18,7 @@ import type {
 } from "../../render/engine/renderPreviewClip";
 
 import {
+  DEFAULT_SHADER_CODE,
   renderReactiveFrame,
 } from "../shaders/renderReactiveFrame";
 
@@ -83,6 +84,8 @@ export function ReactiveFramePreview({
   const [clipDuration, setClipDuration] = useState(5);
   const [clipFps, setClipFps] = useState(30);
 
+const [shaderCode, setShaderCode] = useState(DEFAULT_SHADER_CODE);
+
   useEffect(() => {
     return () => {
       if (videoUrl) {
@@ -110,9 +113,10 @@ export function ReactiveFramePreview({
       setError(null);
 
       renderReactiveFrame(canvas, {
-        time: currentTime,
-        reactivity: resultValue,
-      });
+  time: currentTime,
+  reactivity: resultValue,
+  shaderCode,
+});
 
       setRenderedFrame({
         time: currentTime,
@@ -153,21 +157,22 @@ export function ReactiveFramePreview({
 
     try {
       const videoBlob = await renderPreviewClip({
-        audioFile,
-        analysis: frequencyAnalysis,
-        startTime: requestedInfo.start,
-        duration: requestedInfo.requestedDuration,
-        fps: requestedInfo.fps,
-        band: requestedInfo.band,
-        mapping: {
-          intensity,
-          minimum,
-          maximum,
-        },
-        onProgress: (progress) => {
-          setRenderProgress(Math.round(progress * 100));
-        },
-      });
+  audioFile,
+  analysis: frequencyAnalysis,
+  startTime: requestedInfo.start,
+  duration: requestedInfo.requestedDuration,
+  fps: requestedInfo.fps,
+  band: requestedInfo.band,
+  shaderCode,
+  mapping: {
+    intensity,
+    minimum,
+    maximum,
+  },
+  onProgress: (progress) => {
+    setRenderProgress(Math.round(progress * 100));
+  },
+});
 
       const newVideoUrl = URL.createObjectURL(videoBlob);
 
@@ -209,7 +214,48 @@ export function ReactiveFramePreview({
           </div>
         )}
       </div>
+<section className="shader-editor">
+  <div className="shader-editor-heading">
+    <div>
+      <span className="eyebrow">CÓDIGO GLSL</span>
+      <h3>Shader personalizado</h3>
+    </div>
 
+    <button
+      type="button"
+      className="button button-outline"
+      disabled={isRenderingVideo}
+      onClick={() => {
+        setShaderCode(DEFAULT_SHADER_CODE);
+      }}
+    >
+      Restaurar ejemplo
+    </button>
+  </div>
+
+  <label htmlFor="shader-code" className="shader-editor-label">
+    Pega el código de la pestaña Image de Shadertoy
+  </label>
+
+  <textarea
+    id="shader-code"
+    className="shader-code-input"
+    value={shaderCode}
+    onChange={(event) => {
+      setShaderCode(event.target.value);
+    }}
+    disabled={isRenderingVideo}
+    spellCheck={false}
+    autoCapitalize="off"
+    autoCorrect="off"
+  />
+
+  <p className="shader-editor-hint">
+    Usa mainImage, iResolution e iTime. Para controlar una
+    propiedad con el audio, usa u_reactivity entre 0.0 y 1.0.
+    El código se aplica al generar un fotograma o video.
+  </p>
+</section>
       <div className="reactive-settings">
         <div className="reactive-settings-heading">
           <div>

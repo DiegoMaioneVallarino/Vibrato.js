@@ -37,6 +37,7 @@ type RenderPreviewClipOptions = {
   fps: number;
   band: AudioBand;
   mapping: ReactiveMapping;
+  shaderCode?: string;
   onProgress?: (progress: number) => void;
 };
 
@@ -51,6 +52,7 @@ export async function renderPreviewClip({
   fps,
   band,
   mapping,
+  shaderCode,
   onProgress,
 }: RenderPreviewClipOptions): Promise<Blob> {
   if (![24, 30, 60].includes(fps)) {
@@ -152,10 +154,11 @@ export async function renderPreviewClip({
 
       const reactivity = mapAudioToValue(point[band], mapping);
 
-      renderReactiveFrame(canvas, {
-        time: songTime,
-        reactivity,
-      });
+     renderReactiveFrame(canvas, {
+  time: songTime,
+  reactivity,
+  shaderCode,
+});
 
       await videoSource.add(videoTime, 1 / fps);
 
