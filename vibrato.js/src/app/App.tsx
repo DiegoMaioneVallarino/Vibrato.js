@@ -331,10 +331,12 @@ const currentFrequencyPoint = frequencyAnalysis
           </div>
 
           <div className="preview-container">
-  <ReactiveFramePreview
-    currentTime={currentTime}
-    frequencyPoint={currentFrequencyPoint}
-  />
+ <ReactiveFramePreview
+  currentTime={currentTime}
+  frequencyPoint={currentFrequencyPoint}
+  audioFile={audioFile}
+  frequencyAnalysis={frequencyAnalysis}
+/>
 
   <div className="preview-footer">
     <span>Fotograma de prueba</span>

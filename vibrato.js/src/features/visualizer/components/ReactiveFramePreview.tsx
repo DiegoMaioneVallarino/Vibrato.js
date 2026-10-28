@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { FrequencyPoint } from "../../audio/analysis/analyzeFrequencyBands";
 import { mapAudioToValue } from "../../reactivity/engine/mapAudioToValue";
@@ -6,9 +6,17 @@ import { renderReactiveFrame } from "../shaders/renderReactiveFrame";
 
 import "./ReactiveFramePreview.css";
 
+import { renderPreviewClip } from "../../render/engine/renderPreviewClip";
+
+import type {
+  FrequencyAnalysis,
+} from "../../audio/analysis/analyzeFrequencyBands";
+
 type ReactiveFramePreviewProps = {
   currentTime: number;
   frequencyPoint: FrequencyPoint | null;
+  audioFile: File | null;
+  frequencyAnalysis: FrequencyAnalysis | null;
 };
 
 type AudioBand = "low" | "mid" | "high";
@@ -32,6 +40,8 @@ const bandLabels: Record<AudioBand, string> = {
 export function ReactiveFramePreview({
   currentTime,
   frequencyPoint,
+  audioFile,
+  frequencyAnalysis,
 }: ReactiveFramePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -46,6 +56,20 @@ export function ReactiveFramePreview({
     useState<RenderedFrameInfo | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+const [videoUrl, setVideoUrl] = useState<string | null>(null);
+const [isRenderingVideo, setIsRenderingVideo] = useState(false);
+const [renderProgress, setRenderProgress] = useState(0);
+const [videoError, setVideoError] = useState<string | null>(null);
+
+
+useEffect(() => {
+  return () => {
+    if (videoUrl) {
+      URL.revokeObjectURL(videoUrl);
+    }
+  };
+}, [videoUrl]);
+
 
   function handleRenderFrame() {
     const canvas = canvasRef.current;
@@ -89,7 +113,47 @@ export function ReactiveFramePreview({
       );
     }
   }
+async function handleRenderVideo() {
+  if (!audioFile || !frequencyAnalysis || isRenderingVideo) {
+    return;
+  }
 
+  setIsRenderingVideo(true);
+  setRenderProgress(0);
+  setVideoError(null);
+
+  try {
+    const videoBlob = await renderPreviewClip({
+      audioFile,
+      analysis: frequencyAnalysis,
+      startTime: currentTime,
+      duration: 5,
+      band: selectedBand,
+      mapping: {
+        intensity,
+        minimum,
+        maximum,
+      },
+      onProgress: (progress) => {
+        setRenderProgress(Math.round(progress * 100));
+      },
+    });
+
+    const newVideoUrl = URL.createObjectURL(videoBlob);
+
+    setVideoUrl(newVideoUrl);
+  } catch (renderError) {
+    console.error("Error al generar el video:", renderError);
+
+    setVideoError(
+      renderError instanceof Error
+        ? renderError.message
+        : "No se pudo generar el video."
+    );
+  } finally {
+    setIsRenderingVideo(false);
+  }
+}
   return (
     <div className="reactive-preview">
       <div className="reactive-preview-screen">
@@ -244,6 +308,71 @@ export function ReactiveFramePreview({
           {error}
         </p>
       )}
+
+      <div className="clip-preview">
+  <div className="clip-preview-heading">
+    <div>
+      <span className="eyebrow">VIDEO PROCESADO</span>
+      <h3>Fragmento de prueba</h3>
+    </div>
+
+    <span>5 s · 30 FPS · 640 × 360</span>
+  </div>
+
+  <p>
+    El fragmento comienza en la posición actual de la canción.
+  </p>
+
+  <button
+    type="button"
+    className="button button-primary"
+    onClick={handleRenderVideo}
+    disabled={
+      !audioFile ||
+      !frequencyAnalysis ||
+      isRenderingVideo
+    }
+  >
+    {isRenderingVideo
+      ? `Procesando ${renderProgress}%`
+      : "Generar video de prueba"}
+  </button>
+
+  {isRenderingVideo && (
+    <progress
+      className="clip-progress"
+      max={100}
+      value={renderProgress}
+    >
+      {renderProgress}%
+    </progress>
+  )}
+
+  {videoError && (
+    <p className="error-message" role="alert">
+      {videoError}
+    </p>
+  )}
+
+  {videoUrl && (
+    <div className="clip-result">
+      <video
+        src={videoUrl}
+        controls
+        playsInline
+        className="clip-video"
+      />
+
+      <a
+        href={videoUrl}
+        download="vibrato-preview.webm"
+        className="clip-download"
+      >
+        Descargar video de prueba
+      </a>
+    </div>
+  )}
+</div>
     </div>
   );
 }
