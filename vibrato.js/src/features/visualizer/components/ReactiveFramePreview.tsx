@@ -22,6 +22,18 @@ import {
   renderReactiveFrame,
 } from "../shaders/renderReactiveFrame";
 
+import {
+  ShaderParameters,
+} from "../../reactivity/components/ShaderParameters";
+
+import {
+  resolveShaderParameters,
+} from "../../reactivity/engine/shaderBindings";
+
+import type {
+  ShaderBindings,
+} from "../../reactivity/engine/shaderBindings";
+
 import "./ReactiveFramePreview.css";
 
 type ReactiveFramePreviewProps = {
@@ -85,7 +97,10 @@ export function ReactiveFramePreview({
   const [clipFps, setClipFps] = useState(30);
 
 const [shaderCode, setShaderCode] = useState(DEFAULT_SHADER_CODE);
+const [parameterBindings, setParameterBindings] =
+  useState<ShaderBindings>({});
 
+  
   useEffect(() => {
     return () => {
       if (videoUrl) {
@@ -111,11 +126,17 @@ const [shaderCode, setShaderCode] = useState(DEFAULT_SHADER_CODE);
 
     try {
       setError(null);
+const customUniforms = resolveShaderParameters(
+  shaderCode,
+  parameterBindings,
+  frequencyPoint
+);
 
-      renderReactiveFrame(canvas, {
+renderReactiveFrame(canvas, {
   time: currentTime,
   reactivity: resultValue,
   shaderCode,
+  customUniforms,
 });
 
       setRenderedFrame({
@@ -164,6 +185,7 @@ const [shaderCode, setShaderCode] = useState(DEFAULT_SHADER_CODE);
   fps: requestedInfo.fps,
   band: requestedInfo.band,
   shaderCode,
+  parameterBindings,
   mapping: {
     intensity,
     minimum,
@@ -256,6 +278,12 @@ const [shaderCode, setShaderCode] = useState(DEFAULT_SHADER_CODE);
     El código se aplica al generar un fotograma o video.
   </p>
 </section>
+<ShaderParameters
+  shaderCode={shaderCode}
+  bindings={parameterBindings}
+  onChange={setParameterBindings}
+  disabled={isRenderingVideo}
+/>
       <div className="reactive-settings">
         <div className="reactive-settings-heading">
           <div>

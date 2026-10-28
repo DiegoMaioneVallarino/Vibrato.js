@@ -27,6 +27,15 @@ import {
   renderReactiveFrame,
 } from "../../visualizer/shaders/renderReactiveFrame";
 
+import {
+  resolveShaderParameters,
+} from "../../reactivity/engine/shaderBindings";
+
+import type {
+  ShaderBindings,
+} from "../../reactivity/engine/shaderBindings";
+
+
 export type AudioBand = "low" | "mid" | "high";
 
 type RenderPreviewClipOptions = {
@@ -38,6 +47,7 @@ type RenderPreviewClipOptions = {
   band: AudioBand;
   mapping: ReactiveMapping;
   shaderCode?: string;
+  parameterBindings?: ShaderBindings;
   onProgress?: (progress: number) => void;
 };
 
@@ -53,6 +63,7 @@ export async function renderPreviewClip({
   band,
   mapping,
   shaderCode,
+  parameterBindings = {},
   onProgress,
 }: RenderPreviewClipOptions): Promise<Blob> {
   if (![24, 30, 60].includes(fps)) {
@@ -154,10 +165,17 @@ export async function renderPreviewClip({
 
       const reactivity = mapAudioToValue(point[band], mapping);
 
-     renderReactiveFrame(canvas, {
+    const customUniforms = resolveShaderParameters(
+  shaderCode ?? "",
+  parameterBindings,
+  point
+);
+
+renderReactiveFrame(canvas, {
   time: songTime,
   reactivity,
   shaderCode,
+  customUniforms,
 });
 
       await videoSource.add(videoTime, 1 / fps);

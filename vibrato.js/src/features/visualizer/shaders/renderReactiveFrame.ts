@@ -2,6 +2,7 @@ export type ReactiveFrameOptions = {
   time: number;
   reactivity: number;
   shaderCode?: string;
+  customUniforms?: Record<string, number>;
 };
 
 export const DEFAULT_SHADER_CODE = `
@@ -102,12 +103,7 @@ function createFragmentSource(shaderCode: string): string {
       mainImage(color, gl_FragCoord.xy);
 
       // Reacción automática para shaders que no usan u_reactivity.
-      float audioBrightness = 0.6 + u_reactivity * 0.8;
-
-      gl_FragColor = vec4(
-        color.rgb * audioBrightness,
-        color.a
-      );
+     gl_FragColor = color;
     }
   `;
 }
@@ -269,7 +265,20 @@ export function renderReactiveFrame(
     gl.uniform4f(mouseLocation, 0, 0, 0, 0);
 
     gl.uniform1f(reactivityLocation, reactivity);
+for (const [name, value] of Object.entries(
+  options.customUniforms ?? {}
+)) {
+  if (!Number.isFinite(value)) {
+    throw new Error(`El parámetro "${name}" no es válido.`);
+  }
 
+  const location = gl.getUniformLocation(program, name);
+
+  // Un uniform que no se usa puede ser eliminado por el compilador.
+  if (location !== null) {
+    gl.uniform1f(location, value);
+  }
+}
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     if (gl.isContextLost()) {
