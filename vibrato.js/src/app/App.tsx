@@ -19,6 +19,10 @@ import type {
 
 import { FrequencyBands } from "../features/audio/components/FrequencyBands";
 
+import {
+  DrumRebuildPanel,
+} from "../features/drum-rebuild/components/DrumRebuildPanel";
+
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) {
     return "0:00";
@@ -369,7 +373,10 @@ const currentFrequencyPoint = frequencyAnalysis
         </aside>
       </main>
 
-      <footer className="timeline">
+<DrumRebuildPanel />
+
+<footer className="timeline">
+
         <div className="timeline-top">
           <div>
             <span className="eyebrow">AUDIO</span>
