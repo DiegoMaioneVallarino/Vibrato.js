@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
-  classifyDrumEvents,
+  decomposeDrumEvents,
+  expandDrumComponents,
+  getDrumFragmentBounds,
   getDrumGroups,
   DRUM_KINDS,
   DRUM_LABELS,
@@ -10,6 +12,8 @@ import {
 } from "../engine/drumEngine";
 
 import type {
+  DrumCatalog,
+  DrumComponent,
   DrumEvent,
   DrumKind,
   DrumSamples,
@@ -36,12 +40,11 @@ export function DrumRebuildPanel() {
   const [file, setFile] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<DrumCatalog>({});
   const [events, setEvents] = useState<DrumEvent[]>([]);
   const stemBufferRef = useRef<AudioBuffer | null>(null);
   const previewContextRef = useRef<AudioContext | null>(null);
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [correctionKind, setCorrectionKind] = useState<DrumKind>("snare");
   const [duration, setDuration] = useState(0);
   const [samples, setSamples] = useState<DrumSamples>({});
   const [sensitivity, setSensitivity] = useState(1);
@@ -92,10 +95,8 @@ export function DrumRebuildPanel() {
       const source = context.createBufferSource();
       source.buffer = buffer;
       source.connect(context.destination);
-      const next = events.filter((hit) => hit.time > event.time + 0.01)
-        .reduce((time, hit) => Math.min(time, hit.time), buffer.duration);
-      const start = Math.max(0, Math.min(event.time, buffer.duration));
-      const length = Math.min(0.2, next - start, buffer.duration - start);
+      const { start, end } = getDrumFragmentBounds(event, events, buffer.duration);
+      const length = end - start;
       if (length <= 0) return;
       previewSourceRef.current = source;
       source.onended = () => {
@@ -141,18 +142,6 @@ export function DrumRebuildPanel() {
     );
   }
 
-  function correctHits(ids: readonly string[], kind: DrumKind | null) {
-    setEvents((current) => classifyDrumEvents(current, ids, kind));
-    setResultUrl(null);
-    setError(null);
-    setStatus(`${ids.length} golpes corregidos. Se conservaron sus tiempos; vuelve a generar el audio.`);
-  }
-
-  function classifyCluster(clusterId: string, kind: DrumKind | null) {
-    correctHits(events.filter((event) => (event.clusterId ?? event.id) === clusterId)
-      .map((event) => event.id), kind);
-  }
-
   async function handleScan() {
     if (!file || busy) return;
 
@@ -162,9 +151,9 @@ export function DrumRebuildPanel() {
 
     try {
       const result = await scanDrums(file, sensitivity);
+      setCatalog({});
       setEvents(result.events);
       stemBufferRef.current = result.audio;
-      setSelectedIds([]);
       setResultUrl(null);
       setDuration(result.duration);
       setStatus(
@@ -173,6 +162,34 @@ export function DrumRebuildPanel() {
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : "No se pudo analizar el audio.");
       setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateCatalog(id: string, entry: DrumCatalog[string]) {
+    setCatalog((current) => ({ ...current, [id]: entry }));
+    setEvents((current) => current.map((event) => ({ ...event, components: undefined, fitError: undefined, classified: false })));
+    setResultUrl(null);
+  }
+
+  function updateComponents(id: string, components: DrumComponent[]) {
+    updateEvent(id, { components, classified: false, fitError: undefined });
+  }
+
+  async function handleDecompose() {
+    const audio = stemBufferRef.current;
+    if (!audio || busy) return;
+    setBusy(true);
+    setError(null);
+    setStatus("Comparando cada aparición con las referencias primarias...");
+    try {
+      const proposed = await decomposeDrumEvents(audio, events, catalog);
+      setEvents(proposed);
+      setResultUrl(null);
+      setStatus("Propuestas listas. Revisa los componentes y confirma cada aparición antes de reconstruir.");
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : "No se pudo analizar la composición.");
     } finally {
       setBusy(false);
     }
@@ -199,6 +216,7 @@ export function DrumRebuildPanel() {
   }
 
   const groups = getDrumGroups(events);
+  const confirmedComponents = expandDrumComponents(events.filter((event) => event.classified !== false));
   const classifiedCount = events.filter((event) => event.classified !== false).length;
 
   return (
@@ -229,12 +247,12 @@ export function DrumRebuildPanel() {
               originalAudioRef.current?.pause();
               samplePreviewRef.current?.pause();
               setFile(selected);
+              setCatalog({});
               setEvents([]);
               stemBufferRef.current = null;
               previewSourceRef.current?.stop();
               previewSourceRef.current = null;
-              setSelectedIds([]);
-              setDuration(0);
+                      setDuration(0);
               setResultUrl(null);
               setStatus("");
               setError(null);
@@ -276,7 +294,7 @@ export function DrumRebuildPanel() {
         {DRUM_KINDS.map((kind) => (
           <label key={kind} className="drum-sample">
             <strong>{DRUM_LABELS[kind]}</strong>
-            <span>{events.filter((event) => event.classified !== false && event.kind === kind).length} golpes asignados</span>
+            <span>{confirmedComponents.filter((event) => event.kind === kind).length} golpes asignados</span>
             <input
               type="file"
               accept="audio/*"
@@ -285,6 +303,7 @@ export function DrumRebuildPanel() {
                 const sample = change.target.files?.[0];
                 if (!sample) return;
                 setSamples((current) => ({ ...current, [kind]: sample }));
+                setResultUrl(null);
                 setError(null);
                 previewSample(sample);
                 change.target.value = "";
@@ -297,10 +316,15 @@ export function DrumRebuildPanel() {
 
       {duration > 0 && (
         <>
+          <fieldset className="drum-controls" disabled={busy}>
+            <legend>2. Analizar composición</legend>
+            <button type="button" onClick={handleDecompose}>Analizar apariciones con los primarios</button>
+            <p>Primero marca todos los grupos. Solo los primarios confirmados se usan como referencias. Cambiar el catálogo invalida las propuestas anteriores; volver a analizar reemplaza las correcciones de componentes.</p>
+          </fieldset>
           <section aria-labelledby="sample-groups-heading">
             <div className="drum-event-heading">
               <h3 id="sample-groups-heading">
-                Tipos de sample detectados: {groups.length}
+                1. Catálogo de grupos: {groups.length}
               </h3>
               <span>{events.length} golpes · {classifiedCount} clasificados</span>
             </div>
@@ -318,7 +342,7 @@ export function DrumRebuildPanel() {
                 <tbody>
                   {groups.map((cluster, index) => {
                     const groupEvents = cluster.events;
-                    const selectedKind = cluster.kind;
+                    const entry = catalog[cluster.id] ?? { mode: "pending" as const, kind: "kick" as const, referenceId: groupEvents[0].id };
                     const visibleTimes = groupEvents.slice(0, 8);
 
                     return (
@@ -339,29 +363,29 @@ export function DrumRebuildPanel() {
                           </div>
                         </td>
                         <td>
-                          <select
-                            aria-label={`Tipo de drum para el sample ${index + 1}`}
-                            value={selectedKind ?? "unassigned"}
-                            disabled={busy}
-                            onChange={(change) =>
-                              classifyCluster(
-                                cluster.id,
-                                change.target.value === "unassigned"
-                                  ? null
-                                  : (change.target.value as DrumKind)
-                              )
-                            }
-                          >
-                            <option value="unassigned">Por clasificar</option>
-                            {DRUM_KINDS.map((kind) => (
-                              <option key={kind} value={kind}>{DRUM_LABELS[kind]}</option>
-                            ))}
+                          <select aria-label={`Rol del grupo ${index + 1}`} value={entry.mode} disabled={busy}
+                            onChange={(change) => updateCatalog(cluster.id, { ...entry, mode: change.target.value as "pending" | "primary" | "compound" })}>
+                            <option value="pending">Por revisar</option>
+                            <option value="primary">Primario limpio</option>
+                            <option value="compound">Compuesto / interpuesto</option>
                           </select>
+                          {entry.mode === "primary" && <>
+                            <select aria-label="Instrumento primario" value={entry.kind} disabled={busy}
+                              onChange={(change) => updateCatalog(cluster.id, { ...entry, kind: change.target.value as DrumKind })}>
+                              {DRUM_KINDS.map((kind) => <option key={kind} value={kind}>{DRUM_LABELS[kind]}</option>)}
+                            </select>
+                            <select aria-label="Aparición limpia de referencia" value={entry.referenceId} disabled={busy}
+                              onChange={(change) => updateCatalog(cluster.id, { ...entry, referenceId: change.target.value })}>
+                              {groupEvents.map((event) => <option key={event.id} value={event.id}>{formatTime(event.time)}</option>)}
+                            </select>
+                            <button type="button" disabled={busy} onClick={() => {
+                              const reference = groupEvents.find((event) => event.id === entry.referenceId);
+                              if (reference) void listenToHit(reference);
+                            }}>Escuchar referencia</button>
+                          </>}
                         </td>
                         <td>
-                          <button type="button" disabled={busy} onClick={() =>
-                            setSelectedIds(groupEvents.map((event) => event.id))
-                          }>Seleccionar apariciones</button>
+                          {entry.mode === "primary" ? "Referencia para el análisis" : entry.mode === "compound" ? "Se analizará con los primarios" : "Pendiente"}
                         </td>
                       </tr>
                     );
@@ -390,34 +414,16 @@ export function DrumRebuildPanel() {
             </button>
           </div>
 
-          <fieldset className="drum-controls" disabled={busy || selectedIds.length === 0}>
-            <legend>Separar y corregir golpes seleccionados ({selectedIds.length})</legend>
-            <label>
-              Tipo correcto
-              <select value={correctionKind} onChange={(change) => setCorrectionKind(change.target.value as DrumKind)}>
-                {DRUM_KINDS.map((kind) => <option key={kind} value={kind}>{DRUM_LABELS[kind]}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={() => {
-              correctHits(selectedIds, correctionKind);
-              setSelectedIds([]);
-            }}>Aplicar solo a los seleccionados</button>
-            <button type="button" onClick={() => setSelectedIds([])}>Limpiar selección</button>
-          </fieldset>
-          <p>Escucha cada golpe y marca los que necesitan corrección. El recorte conserva el audio del stem: no separa instrumentos que suenen simultáneamente.</p>
-
+          <p>2. Revisa cada aparición: activa sus componentes, ajusta sus tiempos relativos e intensidades y confirma. Un grupo compuesto no es un instrumento nuevo.</p>
           <div className="drum-event-table">
             <table>
               <thead>
-                <tr><th>Seleccionar</th><th>Tiempo</th><th>Tipo de drum</th><th>Intensidad</th><th>Acciones</th></tr>
+                <tr><th>Tiempo</th><th>Tipo de drum</th><th>Intensidad</th><th>Acciones</th></tr>
               </thead>
               <tbody>
                 {[...events].sort((a, b) => a.time - b.time).map((event) => (
                   <tr key={event.id}>
-                    <td><input type="checkbox" aria-label={`Seleccionar golpe en ${formatTime(event.time)}`}
-                      checked={selectedIds.includes(event.id)} disabled={busy}
-                      onChange={(change) => setSelectedIds((current) => change.target.checked
-                        ? [...current, event.id] : current.filter((id) => id !== event.id))} /></td>
+
                     <td>
                       <input
                         aria-label="Tiempo del golpe"
@@ -428,26 +434,36 @@ export function DrumRebuildPanel() {
                         value={event.time}
                         disabled={busy}
                         onChange={(change) => updateEvent(event.id, {
-                          time: Math.max(0, Math.min(duration, Number(change.target.value))),
+                          time: Math.max(0, Math.min(duration, Number(change.target.value))), classified: false, fitError: undefined,
                         })}
                       />
                     </td>
                     <td>
-                      <select
-                        aria-label="Categoría del golpe"
-                        value={event.classified === false ? "unassigned" : event.kind}
-                        disabled={busy}
-                        onChange={(change) => {
-                          if (change.target.value === "unassigned") {
-                            correctHits([event.id], null);
-                          } else {
-                            correctHits([event.id], change.target.value as DrumKind);
-                          }
-                        }}
-                      >
-                        <option value="unassigned">Por clasificar</option>
-                        {DRUM_KINDS.map((kind) => <option key={kind} value={kind}>{DRUM_LABELS[kind]}</option>)}
-                      </select>
+                      {DRUM_KINDS.map((kind) => {
+                        const component = event.components?.find((item) => item.kind === kind);
+                        const components = event.components ?? [];
+                        return <div key={kind}>
+                          <label><input type="checkbox" disabled={busy} checked={Boolean(component)}
+                            onChange={(change) => updateComponents(event.id, change.target.checked
+                              ? [...components, { kind, offset: 0, strength: event.strength }]
+                              : components.filter((item) => item.kind !== kind))} />{DRUM_LABELS[kind]}</label>
+                          {component && <>
+                            <label>Desplazamiento (s)<input type="number" step={0.001} min={-event.time} max={duration - event.time}
+                              disabled={busy} value={component.offset} onChange={(change) => {
+                                const offset = Number(change.target.value);
+                                if (Number.isFinite(offset)) updateComponents(event.id, components.map((item) => item.kind === kind ? { ...item, offset } : item));
+                              }} /></label>
+                            <label>Intensidad<input type="number" min={0} max={1} step={0.05} disabled={busy} value={component.strength}
+                              onChange={(change) => updateComponents(event.id, components.map((item) => item.kind === kind
+                                ? { ...item, strength: Math.max(0, Math.min(1, Number(change.target.value))) } : item))} /></label>
+                          </>}
+                        </div>;
+                      })}
+                      {event.fitError !== undefined && <small>Error residual: {Math.round(event.fitError * 100)}% (no es probabilidad). Revisa la propuesta.</small>}
+                      <button type="button" disabled={busy || !event.components?.length || event.classified === true}
+                        onClick={() => updateEvent(event.id, { classified: true })}>
+                        {event.classified === true ? "Confirmado" : "Confirmar componentes"}
+                      </button>
                     </td>
                     <td>
                       <input
@@ -457,7 +473,7 @@ export function DrumRebuildPanel() {
                         max={1}
                         step={0.05}
                         value={event.strength}
-                        disabled={busy}
+                        disabled={busy || event.components !== undefined}
                         onChange={(change) => updateEvent(event.id, {
                           strength: Math.max(0, Math.min(1, Number(change.target.value))),
                         })}
@@ -476,7 +492,6 @@ export function DrumRebuildPanel() {
                         >Ir</button>
                         <button type="button" disabled={busy} onClick={() => {
                           setEvents((current) => current.filter((item) => item.id !== event.id));
-                          setSelectedIds((current) => current.filter((id) => id !== event.id));
                           setResultUrl(null);
                         }}>Borrar</button>
                       </div>

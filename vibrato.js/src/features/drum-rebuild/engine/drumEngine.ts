@@ -1,5 +1,13 @@
 export type DrumKind = "kick" | "snare" | "hat";
 
+export type DrumComponent = { kind: DrumKind; offset: number; strength: number };
+export type DrumCatalogEntry = {
+  mode: "pending" | "primary" | "compound";
+  kind: DrumKind;
+  referenceId: string;
+};
+export type DrumCatalog = Record<string, DrumCatalogEntry>;
+
 export type DrumEvent = {
   id: string;
   clusterId?: string | null;
@@ -7,8 +15,12 @@ export type DrumEvent = {
   // `classified: false` means the displayed value is only a placeholder.
   kind: DrumKind;
   classified?: boolean;
+  secondaryCandidate?: boolean;
+  parentEventId?: string;
   time: number;
   strength: number;
+  components?: DrumComponent[];
+  fitError?: number;
 };
 
 export type DrumSampleCluster = {
@@ -383,6 +395,19 @@ export async function rebuildDrums(
     throw new Error("No hay eventos para reconstruir.");
   }
 
+  if (events.some((event) => event.classified === false || event.components?.length === 0)) {
+    throw new Error("Revisa y confirma los componentes de todas las apariciones antes de reconstruir.");
+  }
+  for (const event of events) {
+    for (const component of event.components ?? []) {
+      const time = event.time + component.offset;
+      if (!Number.isFinite(time) || time < 0 || time > originalDuration || !Number.isFinite(component.strength)) {
+        throw new Error("Hay un componente con tiempo o intensidad no válidos.");
+      }
+    }
+  }
+  events = expandDrumComponents(events);
+
   const unassignedCount = events.filter((event) => event.classified === false).length;
   if (unassignedCount > 0) {
     throw new Error(`Asigna un tipo de drum a los ${unassignedCount} eventos sin clasificar.`);
@@ -472,4 +497,172 @@ function encodeWav(audio: AudioBuffer): Blob {
   }
 
   return new Blob([bytes], { type: "audio/wav" });
+}
+
+export function getDrumFragmentBounds(event: DrumEvent, events: DrumEvent[], duration: number) {
+  const start = Math.max(0, Math.min(event.time, duration));
+  const next = events.reduce((end, hit) => hit.time > start + 0.01 ? Math.min(end, hit.time) : end, duration);
+  return { start, end: Math.min(start + 0.2, next, duration) };
+}
+
+// Inspect only the existing short fragments, without relabeling their parent hits.
+export async function findSecondaryDrumAttacks(
+  audio: AudioBuffer,
+  existing: DrumEvent[],
+  sensitivity: number
+): Promise<DrumEvent[]> {
+  const candidates: DrumEvent[] = [];
+  const bands: { type: BiquadFilterType; frequency: number; Q: number }[] = [
+    { type: "lowpass", frequency: 180, Q: 0.707 },
+    { type: "bandpass", frequency: 1800, Q: 0.7 },
+    { type: "highpass", frequency: 5000, Q: 0.707 },
+  ];
+  for (const parent of existing) {
+    if (parent.secondaryCandidate) continue;
+    const { start, end } = getDrumFragmentBounds(parent, existing, audio.duration);
+    if (end - start < 0.04) continue;
+    const fragment = extractClip(audio, start, end - start);
+    for (const band of bands) {
+      const context = new OfflineAudioContext(fragment.numberOfChannels, fragment.length, fragment.sampleRate);
+      const source = context.createBufferSource();
+      const filter = context.createBiquadFilter();
+      source.buffer = fragment;
+      filter.type = band.type;
+      filter.frequency.value = band.frequency;
+      filter.Q.value = band.Q;
+      source.connect(filter);
+      filter.connect(context.destination);
+      source.start();
+      const filtered = await context.startRendering();
+      for (const hit of detectAttacks(filtered, sensitivity)) {
+        // Ignore the parent's attack and retain absolute song timing.
+        const time = start + hit.time;
+        if (hit.time >= 0.025 && time < end) {
+          candidates.push({ ...hit, time, parentEventId: parent.id });
+        }
+      }
+    }
+  }
+  return mergeSecondaryCandidates(existing, candidates);
+}
+
+export function mergeSecondaryCandidates(existing: DrumEvent[], candidates: DrumEvent[]): DrumEvent[] {
+  const additions: DrumEvent[] = [];
+  for (const candidate of [...candidates].sort((a, b) => b.strength - a.strength)) {
+    // Coincident band detections do not prove that multiple instruments occurred.
+    if ([...existing, ...additions].some((event) => Math.abs(event.time - candidate.time) < 0.02)) continue;
+    additions.push({ ...candidate, clusterId: null, classified: false, secondaryCandidate: true });
+  }
+  return additions.sort((a, b) => a.time - b.time);
+}
+
+export function expandDrumComponents(events: DrumEvent[]): DrumEvent[] {
+  return events.flatMap((event) => event.components === undefined ? [event] :
+    event.components.map((component, index) => ({
+      id: `${event.id}-component-${index}`, kind: component.kind,
+      classified: event.classified,
+      time: Math.max(0, event.time + component.offset), strength: component.strength,
+    })));
+}
+
+// Fits confirmed source snippets to each occurrence using non-negative gains.
+// This is a proposal engine for repeated samples, not a source-separation export.
+export function fitDrumTemplates(
+  target: Float32Array,
+  templates: { kind: DrumKind; signal: Float32Array }[],
+  sampleRate: number
+): { components: DrumComponent[]; error: number } {
+  const residual = Float32Array.from(target);
+  const initialEnergy = target.reduce((sum, value) => sum + value * value, 0);
+  if (initialEnergy < 1e-20) return { components: [], error: 1 };
+  const components: DrumComponent[] = [];
+  const used = new Set<DrumKind>();
+  const step = Math.max(1, Math.round(sampleRate * 0.002));
+  const minimumShift = -Math.round(sampleRate * 0.01);
+  const maximumShift = Math.round(sampleRate * 0.1);
+  for (let iteration = 0; iteration < 3; iteration++) {
+    let best: { template: typeof templates[number]; shift: number; gain: number; improvement: number } | null = null;
+    for (const template of templates) {
+      if (used.has(template.kind)) continue;
+      for (let shift = minimumShift; shift <= maximumShift; shift += step) {
+        let dot = 0, energy = 0, observed = 0, covered = 0;
+        for (let i = 0; i < template.signal.length; i++) {
+          const at = i + shift;
+          if (at < 0 || at >= residual.length) continue;
+          const value = template.signal[i];
+          dot += value * residual[at];
+          energy += value * value;
+          observed += residual[at] ** 2;
+          covered++;
+        }
+        if (covered < template.signal.length * 0.7 || energy < 1e-20) continue;
+        const correlation = dot / Math.sqrt(Math.max(1e-30, energy * observed));
+        const gain = Math.max(0, Math.min(4, dot / energy));
+        const improvement = 2 * gain * dot - gain * gain * energy;
+        if (correlation < 0.45 || improvement < initialEnergy * 0.06) continue;
+        if (!best || improvement > best.improvement) best = { template, shift, gain, improvement };
+      }
+    }
+    if (!best) break;
+    used.add(best.template.kind);
+    for (let i = 0; i < best.template.signal.length; i++) {
+      const at = i + best.shift;
+      if (at >= 0 && at < residual.length) residual[at] -= best.gain * best.template.signal[i];
+    }
+    components.push({ kind: best.template.kind, offset: best.shift / sampleRate, strength: Math.min(1, best.gain) });
+  }
+  return {
+    components,
+    error: Math.min(1, residual.reduce((sum, value) => sum + value * value, 0) / initialEnergy),
+  };
+}
+
+export async function decomposeDrumEvents(audio: AudioBuffer, events: DrumEvent[], catalog: DrumCatalog): Promise<DrumEvent[]> {
+  const groups = getDrumGroups(events);
+  if (groups.some((group) => !catalog[group.id] || catalog[group.id].mode === "pending")) {
+    throw new Error("Marca todos los grupos como primarios o compuestos primero.");
+  }
+  const references = groups.filter((group) => catalog[group.id].mode === "primary").map((group) => {
+    const entry = catalog[group.id];
+    const event = group.events.find((hit) => hit.id === entry.referenceId);
+    if (!event) throw new Error("Selecciona una aparición limpia para cada referencia primaria.");
+    return { entry, event };
+  });
+  if (references.length === 0) throw new Error("Confirma al menos una referencia primaria.");
+  // Average adjacent frames when downsampling; use the strongest channel to avoid stereo cancellation.
+  const stride = Math.max(1, Math.floor(audio.sampleRate / 12000));
+  const rate = audio.sampleRate / stride;
+  let channel = audio.getChannelData(0);
+  let channelEnergy = channel.reduce((sum, value) => sum + value * value, 0);
+  for (let i = 1; i < audio.numberOfChannels; i++) {
+    const data = audio.getChannelData(i);
+    const energy = data.reduce((sum, value) => sum + value * value, 0);
+    if (energy > channelEnergy) { channel = data; channelEnergy = energy; }
+  }
+  const read = (time: number, seconds: number) => {
+    const start = Math.max(0, Math.round(time * audio.sampleRate));
+    const signal = new Float32Array(Math.max(1, Math.floor(seconds * rate)));
+    for (let i = 0; i < signal.length; i++) {
+      for (let j = 0; j < stride; j++) signal[i] += (channel[start + i * stride + j] ?? 0) / stride;
+    }
+    return signal;
+  };
+  const templates = references.map(({entry, event}) => {
+    const bounds = getDrumFragmentBounds(event, events, audio.duration);
+    return { kind: entry.kind, signal: read(event.time, Math.min(0.12, bounds.end - bounds.start)) };
+  });
+  const result: DrumEvent[] = [];
+  for (const event of events) {
+    const reference = references.find((item) => item.event.id === event.id);
+    if (reference) {
+      result.push({ ...event, kind: reference.entry.kind, classified: true,
+        components: [{kind: reference.entry.kind, offset: 0, strength: event.strength}], fitError: undefined });
+    } else {
+      const bounds = getDrumFragmentBounds(event, events, audio.duration);
+      const fit = fitDrumTemplates(read(event.time, bounds.end - bounds.start), templates, rate);
+      result.push({ ...event, components: fit.components, fitError: fit.error, classified: false });
+    }
+    if (result.length % 24 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  return result;
 }
