@@ -13,6 +13,8 @@ import type {
   DrumSamples,
 } from "../engine/drumEngine";
 
+import { DrumBenchmarkPanel } from "./DrumBenchmarkPanel";
+
 import "./DrumRebuildPanel.css";
 
 export function DrumRebuildPanel() {
@@ -30,7 +32,42 @@ export function DrumRebuildPanel() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+const samplePreviewRef = useRef<HTMLAudioElement | null>(null);
+const samplePreviewUrlRef = useRef<string | null>(null);
 
+function previewSample(sample: File) {
+  samplePreviewRef.current?.pause();
+
+  if (samplePreviewUrlRef.current) {
+    URL.revokeObjectURL(samplePreviewUrlRef.current);
+  }
+
+  const url = URL.createObjectURL(sample);
+  const preview = new Audio(url);
+
+  samplePreviewUrlRef.current = url;
+  samplePreviewRef.current = preview;
+
+  preview.onended = () => {
+    URL.revokeObjectURL(url);
+    samplePreviewUrlRef.current = null;
+    samplePreviewRef.current = null;
+  };
+
+  preview.onerror = () => {
+    setError(`El navegador no pudo reproducir "${sample.name}".`);
+    URL.revokeObjectURL(url);
+    samplePreviewUrlRef.current = null;
+    samplePreviewRef.current = null;
+  };
+
+  void preview.play().catch(() => {
+    setError(`El navegador no pudo reproducir "${sample.name}".`);
+    URL.revokeObjectURL(url);
+    samplePreviewUrlRef.current = null;
+    samplePreviewRef.current = null;
+  });
+}
   useEffect(() => {
     if (!file) {
       return;
@@ -140,9 +177,10 @@ export function DrumRebuildPanel() {
       </header>
 
       <p className="drum-description">
-        Carga un stem de batería de hasta 60 segundos.
-        Los golpes detectados son candidatos editables.
-      </p>
+  Carga un stem de batería o una canción completa.
+  Los golpes detectados son candidatos editables.
+  El análisis puede tardar según la duración del audio.
+</p>
 
       <fieldset className="drum-controls" disabled={busy}>
         <label>
@@ -237,7 +275,15 @@ export function DrumRebuildPanel() {
                   ...current,
                   [kind]: sample,
                 }));
+const preview = new Audio(URL.createObjectURL(sample));
 
+preview.onended = () => {
+  URL.revokeObjectURL(preview.src);
+};
+
+void preview.play().catch(() => {
+  URL.revokeObjectURL(preview.src);
+});
                 event.target.value = "";
               }}
             />
@@ -432,6 +478,12 @@ export function DrumRebuildPanel() {
           </a>
         </div>
       )}
+      <DrumBenchmarkPanel
+  samples={samples}
+  sensitivity={sensitivity}
+  disabled={busy}
+  onBusyChange={setBusy}
+/>
     </section>
   );
 }

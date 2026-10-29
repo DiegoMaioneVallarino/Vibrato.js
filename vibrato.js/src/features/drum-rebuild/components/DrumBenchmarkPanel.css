@@ -1,0 +1,119 @@
+.drum-benchmark {
+  margin-top: 28px;
+  padding: 20px;
+
+  border: 1px solid #58436d;
+  border-radius: 10px;
+
+  background: #211b28;
+}
+
+.drum-benchmark h3 {
+  margin: 7px 0 12px;
+  font-size: 17px;
+}
+
+.drum-benchmark > p {
+  color: #b7a9c3;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.benchmark-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+
+  margin: 20px 0;
+  padding: 0;
+  border: 0;
+}
+
+.benchmark-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  color: #c7b9d4;
+  font-size: 12px;
+}
+
+.benchmark-controls input,
+.benchmark-controls select {
+  min-height: 38px;
+  max-width: 220px;
+
+  padding: 8px 10px;
+
+  border: 1px solid #55425f;
+  border-radius: 6px;
+
+  background: #151119;
+  color: #eee5f6;
+}
+
+.benchmark-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+
+  margin: 18px 0;
+}
+
+.benchmark-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  padding: 14px;
+  border-radius: 8px;
+
+  background: #30243c;
+}
+
+.benchmark-summary span {
+  color: #b9a8c9;
+  font-size: 11px;
+}
+
+.benchmark-summary strong {
+  color: #dfceff;
+  font-size: 22px;
+}
+
+.benchmark-test-info {
+  overflow-wrap: anywhere;
+}
+
+.benchmark-details {
+  margin: 18px 0;
+  color: #cbbbd8;
+  font-size: 12px;
+}
+
+.benchmark-details summary {
+  cursor: pointer;
+}
+
+.benchmark-details ul {
+  max-height: 220px;
+  overflow: auto;
+  line-height: 1.8;
+}
+
+.benchmark-audio {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+@media (max-width: 750px) {
+  .benchmark-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benchmark-audio {
+    grid-template-columns: 1fr;
+  }
+}

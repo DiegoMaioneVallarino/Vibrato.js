@@ -30,13 +30,67 @@ const HOP_SECONDS = 0.005;
 const WINDOW_SECONDS = 0.01;
 
 async function decodeFile(file: File): Promise<AudioBuffer> {
+  if (file.size === 0) {
+    throw new Error(`El archivo "${file.name}" está vacío.`);
+  }
+
   const context = new AudioContext();
 
   try {
-    return await context.decodeAudioData(await file.arrayBuffer());
+    const data = await file.arrayBuffer();
+
+    return await context.decodeAudioData(data);
+  } catch (error) {
+    console.error(`Error al decodificar "${file.name}":`, error);
+
+    throw new Error(
+      `No se pudo decodificar "${file.name}". ` +
+      "Prueba a exportarlo como WAV PCM de 16 bits y vuelve a cargarlo."
+    );
   } finally {
     await context.close();
   }
+}
+
+function normalizeSample(
+  audio: AudioBuffer,
+  fileName: string
+): AudioBuffer {
+  let peak = 0;
+
+  for (let channel = 0; channel < audio.numberOfChannels; channel++) {
+    const samples = audio.getChannelData(channel);
+
+    for (const sample of samples) {
+      peak = Math.max(peak, Math.abs(sample));
+    }
+  }
+
+  if (peak < 0.00001) {
+    throw new Error(
+      `El sample "${fileName}" está en silencio o tiene un nivel casi nulo.`
+    );
+  }
+
+  const targetPeak = 0.75;
+  const gain = targetPeak / peak;
+
+  const normalized = new AudioBuffer({
+    length: audio.length,
+    numberOfChannels: audio.numberOfChannels,
+    sampleRate: audio.sampleRate,
+  });
+
+  for (let channel = 0; channel < audio.numberOfChannels; channel++) {
+    const source = audio.getChannelData(channel);
+    const destination = normalized.getChannelData(channel);
+
+    for (let index = 0; index < audio.length; index++) {
+      destination[index] = source[index] * gain;
+    }
+  }
+
+  return normalized;
 }
 
 async function filterBand(
@@ -237,11 +291,6 @@ export async function scanDrums(
 ): Promise<DrumScan> {
   const audio = await decodeFile(file);
 
-  if (audio.duration > 60) {
-    throw new Error(
-      "Para esta primera prueba usa un fragmento de hasta 60 segundos."
-    );
-  }
 
   const events: DrumEvent[] = [];
 
@@ -281,8 +330,8 @@ export async function rebuildDrums(
       );
     }
 
-    buffers[kind] = await decodeFile(file);
-  }
+const decodedSample = await decodeFile(file);
+buffers[kind] = normalizeSample(decodedSample, file.name);  }
 
   let outputDuration = originalDuration;
 
