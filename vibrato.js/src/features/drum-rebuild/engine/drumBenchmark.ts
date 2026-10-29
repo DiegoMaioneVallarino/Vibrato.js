@@ -71,12 +71,13 @@ export function createBenchmarkPattern(
     strength: number,
     offset = 0
   ) {
-    events.push({
-      id: `reference-${events.length}`,
-      kind,
-      time: 0.5 + beat * beatDuration + offset,
-      strength,
-    });
+ events.push({
+  id: `reference-${events.length}`,
+  clusterId: null,
+  kind,
+  time: 0.5 + beat * beatDuration + offset,
+  strength,
+});
   }
 
   let duration: number;
