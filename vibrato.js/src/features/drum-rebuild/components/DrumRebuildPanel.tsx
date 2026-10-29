@@ -19,6 +19,8 @@ import type {
   DrumSamples,
 } from "../engine/drumEngine";
 
+import { analyzeSpectralDrums, spectralEvents } from "../engine/spectralDrums";
+import type { SpectralResult, SpectralLabels } from "../engine/spectralDrums";
 import { DrumBenchmarkPanel } from "./DrumBenchmarkPanel";
 import "./DrumRebuildPanel.css";
 
@@ -37,6 +39,13 @@ export function DrumRebuildPanel() {
   const samplePreviewRef = useRef<HTMLAudioElement | null>(null);
   const samplePreviewUrlRef = useRef<string | null>(null);
 
+  const spectralAbortRef = useRef<AbortController | null>(null);
+  const [mode, setMode] = useState<"spectral" | "references">("spectral");
+  const [componentCount, setComponentCount] = useState(3);
+  const [spectral, setSpectral] = useState<SpectralResult | null>(null);
+  const [spectralLabels, setSpectralLabels] = useState<SpectralLabels>({});
+  const [spectralNeedsApply, setSpectralNeedsApply] = useState(false);
+  const [spectralProgress, setSpectralProgress] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -71,6 +80,7 @@ export function DrumRebuildPanel() {
 
   useEffect(() => {
     return () => {
+      spectralAbortRef.current?.abort();
       samplePreviewRef.current?.pause();
       previewSourceRef.current?.stop();
       void previewContextRef.current?.close();
@@ -195,8 +205,63 @@ export function DrumRebuildPanel() {
     }
   }
 
+  async function handleSpectralScan() {
+    if (!file || busy) return;
+    const abort = new AbortController();
+    spectralAbortRef.current = abort;
+    setBusy(true);
+    setError(null);
+    setSpectralProgress(0);
+    setStatus("Descomponiendo el espectrograma. No se requieren golpes aislados...");
+    try {
+      const analyzed = await analyzeSpectralDrums(file, componentCount, sensitivity, setSpectralProgress, abort.signal);
+      if (abort.signal.aborted) return;
+      stemBufferRef.current = analyzed.audio;
+      setDuration(analyzed.audio.duration);
+      setSpectral(analyzed.result);
+      setSpectralNeedsApply(true);
+      setSpectralLabels({});
+      setStatus("Escucha y etiqueta cada componente. Después genera las apariciones para revisarlas.");
+    } catch (analysisError) {
+      if (!abort.signal.aborted) setError(analysisError instanceof Error ? analysisError.message : "Error de análisis.");
+      else setStatus("Análisis cancelado.");
+    } finally {
+      spectralAbortRef.current = null;
+      setBusy(false);
+    }
+  }
+
+  async function listenToSpectral(id: number) {
+    const component = spectral?.components.find((item) => item.id === id);
+    if (!component || !spectral) return;
+    originalAudioRef.current?.pause();
+    resultAudioRef.current?.pause();
+    samplePreviewRef.current?.pause();
+    previewSourceRef.current?.stop();
+    previewSourceRef.current = null;
+    try {
+      const context = previewContextRef.current ?? new AudioContext();
+      previewContextRef.current = context;
+      await context.resume();
+      const buffer = context.createBuffer(1, component.preview.length, spectral.sampleRate);
+      buffer.copyToChannel(Float32Array.from(component.preview), 0);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      previewSourceRef.current = source;
+      source.onended = () => { source.disconnect(); if (previewSourceRef.current === source) previewSourceRef.current = null; };
+      source.start();
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "No se pudo reproducir el componente.");
+    }
+  }
+
   async function handleRebuild() {
     if (busy || events.length === 0) return;
+    if (mode === "spectral" && spectralNeedsApply) {
+      setError("Genera las apariciones con las etiquetas espectrales actuales antes de reconstruir.");
+      return;
+    }
 
     originalAudioRef.current?.pause();
     setBusy(true);
@@ -230,8 +295,8 @@ export function DrumRebuildPanel() {
       </header>
 
       <p className="drum-description">
-        Carga un stem de batería. Vibrato detecta golpes y agrupa repeticiones
-        similares; tú escuchas cada grupo y decides qué instrumento es.
+        Carga un stem de batería. Analiza sus componentes espectrales sin exigir
+        golpes aislados, etiqueta lo que escuchas y revisa las apariciones propuestas.
       </p>
 
       <fieldset className="drum-controls" disabled={busy}>
@@ -247,12 +312,15 @@ export function DrumRebuildPanel() {
               originalAudioRef.current?.pause();
               samplePreviewRef.current?.pause();
               setFile(selected);
+              setSpectral(null);
+              setSpectralNeedsApply(false);
+              setSpectralLabels({});
               setCatalog({});
               setEvents([]);
               stemBufferRef.current = null;
               previewSourceRef.current?.stop();
               previewSourceRef.current = null;
-                      setDuration(0);
+              setDuration(0);
               setResultUrl(null);
               setStatus("");
               setError(null);
@@ -273,10 +341,62 @@ export function DrumRebuildPanel() {
           />
         </label>
 
-        <button type="button" className="button button-primary" disabled={!file} onClick={handleScan}>
-          Analizar y agrupar
+        <label>Método
+          <select value={mode} onChange={(change) => setMode(change.target.value as "spectral" | "references")}>
+            <option value="spectral">Espectral · sin referencias limpias</option>
+            <option value="references">Referencias limpias · manual</option>
+          </select>
+        </label>
+        {mode === "spectral" && <label>Componentes a explorar
+          <input type="number" min={3} max={8} value={componentCount} onChange={(change) =>
+            setComponentCount(Math.max(3, Math.min(8, Math.round(Number(change.target.value) || 3))))} />
+        </label>}
+        <button type="button" className="button button-primary" disabled={!file}
+          onClick={mode === "spectral" ? handleSpectralScan : handleScan}>
+          {mode === "spectral" ? "Analizar espectrograma" : "Analizar y agrupar"}
         </button>
       </fieldset>
+
+      {busy && spectralAbortRef.current && <div>
+        <progress max={1} value={spectralProgress} aria-label="Progreso espectral" />
+        <button type="button" onClick={() => spectralAbortRef.current?.abort()}>Cancelar análisis</button>
+      </div>}
+
+      {mode === "spectral" && spectral && <section>
+        <h3>Componentes espectrales propuestos</h3>
+        <p>Son separaciones aproximadas. Un instrumento puede ocupar varios componentes; puedes asignarles la misma etiqueta. Si uno sigue mezclado, déjalo pendiente y prueba otro número de componentes.</p>
+        <p>Error de reconstrucción espectral: {(spectral.reconstructionError * 100).toFixed(1)}%. No mide la precisión de los instrumentos.</p>
+        <div className="drum-event-table"><table>
+          <thead><tr><th>Componente</th><th>Escuchar</th><th>Ataques candidatos</th><th>Etiqueta humana</th></tr></thead>
+          <tbody>{spectral.components.map((component) => <tr key={component.id}>
+            <td>Componente {component.id + 1}</td>
+            <td><button type="button" disabled={busy} onClick={() => void listenToSpectral(component.id)}>Escuchar componente filtrado</button></td>
+            <td>{component.onsets.length}</td>
+            <td><select disabled={busy} value={spectralLabels[component.id] ?? "unassigned"}
+              onChange={(change) => {
+                setSpectralLabels((current) => ({ ...current, [component.id]: change.target.value as SpectralLabels[number] }));
+                setSpectralNeedsApply(true);
+                setResultUrl(null);
+              }}>
+              <option value="unassigned">Pendiente / sigue mezclado</option>
+              {DRUM_KINDS.map((kind) => <option key={kind} value={kind}>{DRUM_LABELS[kind]}</option>)}
+              <option value="ignore">Ignorar componente</option>
+            </select></td>
+          </tr>)}</tbody>
+        </table></div>
+        <button type="button" disabled={busy} onClick={() => {
+          try {
+            setEvents(spectralEvents(spectral, spectralLabels));
+            setSpectralNeedsApply(false);
+            setCatalog({});
+            setResultUrl(null);
+            setError(null);
+            setStatus("Apariciones propuestas listas. Revisa y confirma los componentes de cada una.");
+          } catch (mappingError) {
+            setError(mappingError instanceof Error ? mappingError.message : "No se pudieron generar las apariciones.");
+          }
+        }}>Generar apariciones propuestas (reemplaza la lista actual)</button>
+      </section>}
 
       {originalUrl && (
         <div className="drum-player">
@@ -316,6 +436,7 @@ export function DrumRebuildPanel() {
 
       {duration > 0 && (
         <>
+          {mode === "references" && <>
           <fieldset className="drum-controls" disabled={busy}>
             <legend>2. Analizar composición</legend>
             <button type="button" onClick={handleDecompose}>Analizar apariciones con los primarios</button>
@@ -394,6 +515,7 @@ export function DrumRebuildPanel() {
               </table>
             </div>
           </section>
+          </>}
 
           <div className="drum-event-heading">
             <h3>Golpes: {events.length}</h3>
@@ -414,6 +536,10 @@ export function DrumRebuildPanel() {
             </button>
           </div>
 
+          <button type="button" disabled={busy || !events.some((event) => event.components?.length)} onClick={() => {
+            setEvents((current) => current.map((event) => event.components?.length ? { ...event, classified: true } : event));
+            setResultUrl(null);
+          }}>Confirmar las propuestas con componentes tras revisarlas</button>
           <p>2. Revisa cada aparición: activa sus componentes, ajusta sus tiempos relativos e intensidades y confirma. Un grupo compuesto no es un instrumento nuevo.</p>
           <div className="drum-event-table">
             <table>
