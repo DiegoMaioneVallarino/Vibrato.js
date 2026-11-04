@@ -7,6 +7,10 @@ import { Waveform } from "../features/audio/components/Waveform";
 import { ReactiveFramePreview } from "../features/visualizer/components/ReactiveFramePreview";
 
 import "./App.css";
+import "./AppTabs.css";
+import { SongCutPanel } from "../features/song-cut/components/SongCutPanel";
+
+type WorkspaceTab = "studio" | "drums" | "song-cut";
 
 import {
   analyzeFrequencyBands,
@@ -35,6 +39,13 @@ function formatTime(seconds: number): string {
 }
 
 function App() {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("studio");
+
+  function switchTab(tab: WorkspaceTab) {
+    if (tab === activeTab) return;
+    document.querySelectorAll<HTMLMediaElement>("audio, video").forEach((media) => media.pause());
+    setActiveTab(tab);
+  }
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -251,6 +262,24 @@ const currentFrequencyPoint = frequencyAnalysis
         </div>
       </header>
 
+      <nav className="vibrato-tabs" aria-label="Herramientas de Vibrato">
+        {([
+          ["studio", "Estudio visual"],
+          ["drums", "Drum Rebuild"],
+          ["song-cut", "Vibrato Song Cut"],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            aria-current={activeTab === tab ? "page" : undefined}
+            onClick={() => switchTab(tab)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="vibrato-tab-content" hidden={activeTab !== "studio"}>
       <main className="workspace">
         <aside className="panel sidebar">
           <div className="panel-heading">
@@ -373,7 +402,17 @@ const currentFrequencyPoint = frequencyAnalysis
         </aside>
       </main>
 
-<DrumRebuildPanel />
+      </div>
+
+      <div className="vibrato-tab-content" hidden={activeTab !== "drums"}>
+        <DrumRebuildPanel />
+      </div>
+
+      <div className="vibrato-tab-content" hidden={activeTab !== "song-cut"}>
+        <SongCutPanel />
+      </div>
+
+      <div className="vibrato-tab-content" hidden={activeTab !== "studio"}>
 
 <footer className="timeline">
 
@@ -428,6 +467,7 @@ const currentFrequencyPoint = frequencyAnalysis
           <span className="time-label">{formatTime(duration)}</span>
         </div>
       </footer>
+      </div>
 
       {audioUrl && (
         <audio
